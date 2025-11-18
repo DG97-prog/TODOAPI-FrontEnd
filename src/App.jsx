@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
 import TaskForm from './components/TaskForm';
 import TaskItem from './components/TaskItem';
 import TaskStats from './components/TaskStats';
+import UserAdmin from './components/UserAdmin';
 import mockService from './services/mockService';
 import apiService from './services/apiService';
 import './App.css';
@@ -28,12 +29,23 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
 
+  const [showUserAdmin, setShowUserAdmin] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [userAdminForm, setUserAdminForm] = useState({
+    nombreUsuario: '',
+    correo: '',
+    contrasena: '',
+    rol: 'User'
+  });
+
   const currentService = useMockService ? mockService : apiService;
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setLoginError('');
+
     try {
       const result = await currentService.login(loginForm.username, loginForm.password);
       setUser(result.user);
@@ -52,7 +64,7 @@ export default function App() {
       const taskList = await currentService.getTasks();
       setTasks(taskList || []);
     } catch (error) {
-      console.error('Error cargando tareas:', error);
+      console.error("Error cargando tareas:", error);
     } finally {
       setLoading(false);
     }
@@ -61,33 +73,22 @@ export default function App() {
   const handleTaskSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     try {
       if (isEditing) {
-        const taskToUpdate = tasks.find(t => t.id === isEditing);
-        if (!taskToUpdate) throw new Error("Tarea no encontrada para editar");
-
-        const updatedTaskData = {
-          ...taskToUpdate,
-          ...taskForm,
-        };
-
-        const updatedTask = await currentService.updateTask(isEditing, updatedTaskData);
-
-        setTasks(prev =>
-          prev.map(t => t.id === isEditing ? (updatedTask || updatedTaskData) : t)
-        );
+        const updatedTask = await currentService.updateTask(isEditing, taskForm);
+        setTasks(tasks.map(t => t.id === isEditing ? (updatedTask || taskForm) : t));
         setIsEditing(null);
       } else {
-        const newTaskData = {
+        const newTask = await currentService.createTask({
           ...taskForm,
-          categoriaId: parseInt(taskForm.categoriaId, 10),
-          estadoId: parseInt(taskForm.estadoId, 10),
-          fechaVencimiento: taskForm.fechaVencimiento || new Date().toISOString(),
-        };
+          categoriaId: Number(taskForm.categoriaId),
+          estadoId: Number(taskForm.estadoId),
+        });
 
-        const newTask = await currentService.createTask(newTaskData);
-        setTasks(prev => [...prev, newTask]);
+        setTasks([...tasks, newTask]);
       }
+
       setTaskForm({
         titulo: '',
         descripcion: '',
@@ -95,186 +96,214 @@ export default function App() {
         estadoId: '',
         fechaVencimiento: '',
       });
+
       setShowTaskForm(false);
-    } catch (error) {
-      console.error('Error con la tarea:', error);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteTask = async (id) => {
-    setLoading(true);
-    try {
-      await currentService.deleteTask(id);
-      setTasks(prev => prev.filter(t => t.id !== id));
-    } catch (error) {
-      console.error('Error eliminando tarea:', error);
-    } finally {
-      setLoading(false);
-    }
+    await currentService.deleteTask(id);
+    setTasks(tasks.filter(t => t.id !== id));
   };
 
-  // 🔥 Importante: usar el objeto actualizado que viene desde TaskItem
-  const handleToggleStatus = async (taskWithNewStatus) => {
-    setLoading(true);
-    try {
-      const updatedTask = await currentService.updateTask(taskWithNewStatus.id, taskWithNewStatus);
+  const handleToggleStatus = async (task) => {
+    const updated = await currentService.updateTask(task.id, {
+      ...task,
+      estadoId: task.estadoId
+    });
 
-      const taskToUse = (updatedTask && Object.keys(updatedTask).length > 0)
-        ? updatedTask
-        : taskWithNewStatus;
+    setTasks(tasks.map(t => t.id === task.id ? (updated || task) : t));
+  };
 
-      setTasks(prev =>
-        prev.map(t =>
-          t.id === taskWithNewStatus.id ? taskToUse : t
-        )
-      );
-    } catch (error) {
-      console.error('Error actualizando estado:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleEditTask = (task) => {
+    setTaskForm(task);
+    setIsEditing(task.id);
+    setShowTaskForm(true);
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUser(null);
     setTasks([]);
-    setLoginForm({ username: '', password: '' });
+    setShowUserAdmin(false);
   };
 
-  const handleEditTask = (task) => {
-    setTaskForm({
-      titulo: task.titulo,
-      descripcion: task.descripcion,
-      categoriaId: task.categoriaId,
-      estadoId: task.estadoId,
-      fechaVencimiento: task.fechaVencimiento,
+  const loadAdminUsers = async () => {
+    if (useMockService || user?.role !== "Admin") return;
+    try {
+      const users = await apiService.getUsers();
+      setAdminUsers(users);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (showUserAdmin) loadAdminUsers();
+  }, [showUserAdmin]);
+
+  const handleUserFormSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      if (editingUserId) {
+        await apiService.updateUser(editingUserId, userAdminForm);
+      } else {
+        await apiService.registerUser(userAdminForm);
+      }
+
+      setUserAdminForm({
+        nombreUsuario: '',
+        correo: '',
+        contrasena: '',
+        rol: 'User'
+      });
+
+      setEditingUserId(null);
+      loadAdminUsers();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  };
+
+  const handleEditUserClick = (u) => {
+    setUserAdminForm({
+      nombreUsuario: u.nombreUsuario,
+      correo: u.correo,
+      contrasena: "",
+      rol: u.rol
     });
-    setIsEditing(task.id);
-    setShowTaskForm(true);
+    setEditingUserId(u.id);
   };
 
-  return !isLoggedIn ? (
-    <Login
-      useMockService={useMockService}
-      setUseMockService={setUseMockService}
-      loginForm={loginForm}
-      setLoginForm={setLoginForm}
-      handleLogin={handleLogin}
-      loading={loading}
-      loginError={loginError}
-    />
-  ) : (
+  const handleDeleteUserClick = async (id) => {
+    if (!window.confirm("¿Eliminar este usuario?")) return;
+
+    await apiService.deleteUser(id);
+    loadAdminUsers();
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <Login
+        useMockService={useMockService}
+        setUseMockService={setUseMockService}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        handleLogin={handleLogin}
+        loading={loading}
+        loginError={loginError}
+      />
+    );
+  }
+
+  return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <header className="bg-white/10 backdrop-blur-lg border-b border-white/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Todo App</h1>
-                <p className="text-white/70 text-sm">Gestiona tus tareas de forma inteligente</p>
-              </div>
+        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
+              <CheckCircle className="w-6 h-6 text-white" />
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="hidden sm:flex items-center space-x-2 px-3 py-2 bg-white/10 rounded-xl">
-                <span className="text-white/70 text-sm">
-                  {useMockService ? '🔄 Mock' : '🌐 API'}
-                </span>
-                <button
-                  onClick={() => setUseMockService(!useMockService)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    useMockService ? 'bg-blue-500' : 'bg-gray-600'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                      useMockService ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-              <div className="flex items-center space-x-3 px-4 py-2 bg-white/10 rounded-2xl">
-                <User className="w-5 h-5 text-white" />
-                <span className="text-white font-medium">{user?.username}</span>
-                <span className="px-2 py-1 bg-blue-500/30 text-blue-200 text-xs rounded-lg">
-                  {user?.role}
-                </span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </div>
+            <h1 className="text-2xl font-bold text-white">Todo App</h1>
           </div>
+
+          <div className="flex items-center space-x-3">
+            {!useMockService && user?.role === "Admin" && (
+              <button
+                onClick={() => setShowUserAdmin(prev => !prev)}
+                className="px-3 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700"
+              >
+                {showUserAdmin ? "Volver a Tareas" : "Gestionar Usuarios"}
+              </button>
+            )}
+
+            <User className="w-5 h-5 text-white" />
+            <span className="text-white font-medium">{user?.username}</span>
+
+            <span className="px-2 py-1 bg-blue-500/30 text-blue-200 text-xs rounded-lg">
+              {user?.role}
+            </span>
+
+            <button
+              onClick={handleLogout}
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <TaskStats tasks={tasks} />
+      <main className="max-w-7xl mx-auto px-4 py-8">
 
-        <div className="mb-6">
-          <button
-            onClick={() => {
-              setShowTaskForm(!showTaskForm);
-              setTaskForm({
-                titulo: '',
-                descripcion: '',
-                categoriaId: '',
-                estadoId: '',
-                fechaVencimiento: '',
-              });
-              setIsEditing(null);
-            }}
-            className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-2xl hover:from-blue-700 hover:to-purple-700 transition-all duration-300 transform hover:scale-105"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Nueva Tarea</span>
-          </button>
-        </div>
-
-        {showTaskForm && (
-          <TaskForm
-            isEditing={isEditing}
-            taskForm={taskForm}
-            setTaskForm={setTaskForm}
-            handleTaskSubmit={handleTaskSubmit}
+        {showUserAdmin ? (
+          <UserAdmin
+            adminUsers={adminUsers}
+            userAdminForm={userAdminForm}
+            editingUserId={editingUserId}
+            setUserAdminForm={setUserAdminForm}
+            handleUserFormSubmit={handleUserFormSubmit}
+            handleEditUserClick={handleEditUserClick}
+            handleDeleteUserClick={handleDeleteUserClick}
             loading={loading}
-            setShowTaskForm={setShowTaskForm}
-            setIsEditing={setIsEditing}
           />
+        ) : (
+          <>
+            <TaskStats tasks={tasks} />
+
+            <div className="mb-6">
+              <button
+                onClick={() => {
+                  setShowTaskForm(!showTaskForm);
+                  setIsEditing(null);
+                  setTaskForm({
+                    titulo: '',
+                    descripcion: '',
+                    categoriaId: '',
+                    estadoId: '',
+                    fechaVencimiento: '',
+                  });
+                }}
+                className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Nueva Tarea</span>
+              </button>
+            </div>
+
+            {showTaskForm && (
+              <TaskForm
+                isEditing={isEditing}
+                taskForm={taskForm}
+                setTaskForm={setTaskForm}
+                handleTaskSubmit={handleTaskSubmit}
+                setShowTaskForm={setShowTaskForm}
+                setIsEditing={setIsEditing}
+                loading={loading}
+              />
+            )}
+
+            <div className="space-y-4">
+              {(tasks?.$values ?? tasks).map(task => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  onDelete={() => handleDeleteTask(task.id)}
+                  onToggleStatus={handleToggleStatus}
+                  onEdit={handleEditTask}
+                />
+              ))}
+            </div>
+          </>
         )}
 
-        <div className="space-y-4">
-          {loading && tasks.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-              <p className="text-white/70 mt-4">Cargando tareas...</p>
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="text-center py-12 bg-white/5 rounded-3xl border border-white/10">
-              <CheckCircle className="w-16 h-16 text-white/30 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-white mb-2">¡No hay tareas!</h3>
-              <p className="text-white/70">Crea tu primera tarea para comenzar</p>
-            </div>
-          ) : (
-            tasks.map(task => (
-              <TaskItem
-                key={task.id}
-                task={task}
-                onDelete={() => handleDeleteTask(task.id)}
-                onToggleStatus={handleToggleStatus}
-                onEdit={handleEditTask}
-              />
-            ))
-          )}
-        </div>
       </main>
     </div>
   );
