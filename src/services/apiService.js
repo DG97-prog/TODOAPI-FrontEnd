@@ -1,9 +1,8 @@
-// apiService.js
 const apiService = {
   baseUrl: 'http://localhost:5220/api',
   token: null,
 
-  // 🔑 Login
+  // Login para obtener token
   login: async (nombreUsuario, contrasena) => {
     const response = await fetch(`${apiService.baseUrl}/account/login`, {
       method: 'POST',
@@ -21,35 +20,42 @@ const apiService = {
     return data;
   },
 
-  mapTask: (t) => ({
-    id: t.id,
-    name: t.titulo,
-    description: t.descripcion,
-    status: t.estadoId === 1 ? 0 : 1, // 0 = pendiente, 1 = completada
-    category: t.categoria?.nombre ?? null,
-    dueDate: t.fechaVencimiento,
-  }),
+  // Obtener tareas
+getTasks: async () => {
+  const response = await fetch(`${apiService.baseUrl}/tareas`, {
+    headers: { Authorization: `Bearer ${apiService.token}` },
+  });
 
-  getTasks: async () => {
-    const response = await fetch(`${apiService.baseUrl}/tareas`, {
-      headers: { Authorization: `Bearer ${apiService.token}` },
-    });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error('Error al obtener las tareas: ' + errorText);
+  }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error('Error al obtener las tareas: ' + errorText);
-    }
+  const data = await response.json();
 
-    const data = await response.json();
+  // 🔥 Normalización robusta (SOLO aquí)
+  if (Array.isArray(data)) return data;
 
-    if (!Array.isArray(data)) {
-      throw new Error('La respuesta del backend no es un arreglo de tareas.');
-    }
+  if (data?.$values) return data.$values;
 
-    return data.map(apiService.mapTask);
-  },
+  if (data?.items) return data.items;
 
+  if (data?.tareas) return data.tareas;
+
+  // Si llega un objeto extraño, lo convertimos a array vacío
+  console.warn("Formato inesperado en GET /tareas:", data);
+  return [];
+},
+
+  // Crear tarea
   createTask: async (task) => {
+    const requiredFields = ['titulo', 'descripcion', 'categoriaId', 'estadoId', 'fechaVencimiento'];
+    const isValid = requiredFields.every(field => task[field] !== undefined && task[field] !== null);
+
+    if (!isValid) {
+      throw new Error('El objeto task enviado no tiene el formato esperado');
+    }
+
     const response = await fetch(`${apiService.baseUrl}/tareas`, {
       method: 'POST',
       headers: {
@@ -64,11 +70,10 @@ const apiService = {
       throw new Error(`Error al crear la tarea: ${errorText}`);
     }
 
-    const data = await response.json();
-    return apiService.mapTask(data);
+    return await response.json();
   },
 
-  // ✏ Actualizar tarea
+  // Actualizar tarea
   updateTask: async (id, task) => {
     const response = await fetch(`${apiService.baseUrl}/tareas/${id}`, {
       method: 'PUT',
@@ -84,11 +89,22 @@ const apiService = {
       throw new Error('Error al actualizar la tarea: ' + errorText);
     }
 
+    // El back ahora devuelve la tarea actualizada en JSON
     const text = await response.text();
-    return text ? apiService.mapTask(JSON.parse(text)) : {};
+
+    if (!text) {
+      // Si por alguna razón no hay body, devolvemos la misma task que enviamos
+      return task;
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return task;
+    }
   },
 
-  // 🗑 Eliminar tarea
+  // Eliminar tarea
   deleteTask: async (id) => {
     const response = await fetch(`${apiService.baseUrl}/tareas/${id}`, {
       method: 'DELETE',

@@ -21,8 +21,8 @@ export default function App() {
   const [taskForm, setTaskForm] = useState({
     titulo: '',
     descripcion: '',
-    categoriaId: '',  // corregido aquí
-    estadoId: '',     // corregido aquí
+    categoriaId: '',
+    estadoId: '',
     fechaVencimiento: '',
   });
   const [isEditing, setIsEditing] = useState(null);
@@ -50,7 +50,7 @@ export default function App() {
     setLoading(true);
     try {
       const taskList = await currentService.getTasks();
-      setTasks(taskList);
+      setTasks(taskList || []);
     } catch (error) {
       console.error('Error cargando tareas:', error);
     } finally {
@@ -72,24 +72,27 @@ export default function App() {
         };
 
         const updatedTask = await currentService.updateTask(isEditing, updatedTaskData);
-        setTasks(tasks.map(t => t.id === isEditing ? updatedTask : t));
+
+        setTasks(prev =>
+          prev.map(t => t.id === isEditing ? (updatedTask || updatedTaskData) : t)
+        );
         setIsEditing(null);
       } else {
         const newTaskData = {
           ...taskForm,
-          categoriaId: parseInt(taskForm.categoriaId),
-          estadoId: parseInt(taskForm.estadoId),
+          categoriaId: parseInt(taskForm.categoriaId, 10),
+          estadoId: parseInt(taskForm.estadoId, 10),
           fechaVencimiento: taskForm.fechaVencimiento || new Date().toISOString(),
         };
 
         const newTask = await currentService.createTask(newTaskData);
-        setTasks([...tasks, newTask]);
+        setTasks(prev => [...prev, newTask]);
       }
       setTaskForm({
         titulo: '',
         descripcion: '',
-        categoriaId: '',  // corregido aquí
-        estadoId: '',     // corregido aquí
+        categoriaId: '',
+        estadoId: '',
         fechaVencimiento: '',
       });
       setShowTaskForm(false);
@@ -104,7 +107,7 @@ export default function App() {
     setLoading(true);
     try {
       await currentService.deleteTask(id);
-      setTasks(tasks.filter(t => t.id !== id));
+      setTasks(prev => prev.filter(t => t.id !== id));
     } catch (error) {
       console.error('Error eliminando tarea:', error);
     } finally {
@@ -112,15 +115,21 @@ export default function App() {
     }
   };
 
-  const handleToggleStatus = async (task) => {
-    const newEstadoId = task.estadoId === 0 ? 1 : 0;
+  // 🔥 Importante: usar el objeto actualizado que viene desde TaskItem
+  const handleToggleStatus = async (taskWithNewStatus) => {
     setLoading(true);
     try {
-      const updatedTask = await currentService.updateTask(task.id, {
-        ...task,
-        estadoId: newEstadoId,
-      });
-      setTasks(tasks.map(t => t.id === task.id ? updatedTask : t));
+      const updatedTask = await currentService.updateTask(taskWithNewStatus.id, taskWithNewStatus);
+
+      const taskToUse = (updatedTask && Object.keys(updatedTask).length > 0)
+        ? updatedTask
+        : taskWithNewStatus;
+
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskWithNewStatus.id ? taskToUse : t
+        )
+      );
     } catch (error) {
       console.error('Error actualizando estado:', error);
     } finally {
@@ -217,8 +226,8 @@ export default function App() {
               setTaskForm({
                 titulo: '',
                 descripcion: '',
-                categoriaId: '',  // corregido aquí
-                estadoId: '',     // corregido aquí
+                categoriaId: '',
+                estadoId: '',
                 fechaVencimiento: '',
               });
               setIsEditing(null);
@@ -255,13 +264,13 @@ export default function App() {
               <p className="text-white/70">Crea tu primera tarea para comenzar</p>
             </div>
           ) : (
-            (tasks?.$values ?? tasks).map(task => (
+            tasks.map(task => (
               <TaskItem
                 key={task.id}
                 task={task}
                 onDelete={() => handleDeleteTask(task.id)}
-                onToggleStatus={() => handleToggleStatus(task)}
-                onEdit={() => handleEditTask(task)}
+                onToggleStatus={handleToggleStatus}
+                onEdit={handleEditTask}
               />
             ))
           )}
@@ -270,4 +279,3 @@ export default function App() {
     </div>
   );
 }
-

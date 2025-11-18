@@ -1,27 +1,35 @@
 import React from 'react';
 import { Check, Trash2, Edit3, CheckCircle, Clock, AlertCircle } from 'lucide-react';
-import '../index.css';
 
-export default function TaskItem({
-  task,
-  onToggleStatus,
-  onEdit,
-  onDelete
-}) {
+export default function TaskItem({ task, onToggleStatus, onEdit, onDelete }) {
+  // Intentamos sacar el estado de varias formas por si cambia el back
+  const estadoId = Number(
+    task.estadoId ??
+    (task.estado && task.estado.id) ??
+    0
+  );
+
   const getStatusIcon = (status) => {
     switch (status) {
-      case 0: return <Clock className="w-4 h-4 text-amber-500" />;
-      case 1: return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 1: return <Clock className="w-4 h-4 text-red-500" />;
+      case 2: return <AlertCircle className="w-4 h-4 text-amber-500" />;
+      case 3: return <CheckCircle className="w-4 h-4 text-green-500" />;
       default: return <AlertCircle className="w-4 h-4 text-red-500" />;
     }
   };
 
   const getStatusText = (status) => {
     switch (status) {
-      case 0: return 'Pendiente';
-      case 1: return 'Completada';
+      case 1: return 'Pendiente';
+      case 2: return 'En progreso';
+      case 3: return 'Completada';
       default: return 'Desconocido';
     }
+  };
+
+  const handleToggle = () => {
+    if (estadoId === 1) onToggleStatus({ ...task, estadoId: 2 });
+    else if (estadoId === 2) onToggleStatus({ ...task, estadoId: 3 });
   };
 
   return (
@@ -29,35 +37,43 @@ export default function TaskItem({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center space-x-3 mb-2">
-            {getStatusIcon(task.status)}
-            <h3 className={`text-lg font-semibold ${task.status === 1 ? 'text-green-300 line-through' : 'text-white'}`}>
-              {task.name}
+            {getStatusIcon(estadoId)}
+            <h3 className={`text-lg font-semibold ${estadoId === 3 ? 'text-white line-through' : 'text-white'}`}>
+              {task.titulo}
             </h3>
             <span className={`px-2 py-1 text-xs rounded-lg ${
-              task.status === 1
+              estadoId === 3
                 ? 'bg-green-500/20 text-green-200'
-                : 'bg-amber-500/20 text-amber-200'
+                : estadoId === 2
+                  ? 'bg-amber-500/20 text-amber-200'
+                  : 'bg-red-500/20 text-red-200'
             }`}>
-              {console.log(task)}
-              {getStatusText(task.status)}
+              {getStatusText(estadoId)}
             </span>
           </div>
-          {task.description && (
-            <p className="text-white/70 mb-4">{task.description}</p>
-          )}
+          {task.descripcion && <p className="text-white/70 mb-4">{task.descripcion}</p>}
         </div>
 
         <div className="flex items-center space-x-2 ml-4">
           <button
-            onClick={() => onToggleStatus(task)}
+            onClick={handleToggle}
             className={`p-2 rounded-xl transition-colors ${
-              task.status === 1
-                ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
-                : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+              estadoId === 3
+                ? 'bg-gray-500/20 text-gray-400 cursor-not-allowed'
+                : estadoId === 2
+                  ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                  : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
             }`}
-            title={task.status === 1 ? 'Marcar como pendiente' : 'Marcar como completada'}
+            title={
+              estadoId === 1 ? 'Marcar como en progreso' :
+              estadoId === 2 ? 'Marcar como completada' :
+              'Tarea completada'
+            }
+            disabled={estadoId === 3}
           >
-            {task.status === 1 ? <Clock className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+            {estadoId === 1 ? <AlertCircle className="w-4 h-4" /> :
+             estadoId === 2 ? <Check className="w-4 h-4" /> :
+             <CheckCircle className="w-4 h-4" />}
           </button>
 
           <button
