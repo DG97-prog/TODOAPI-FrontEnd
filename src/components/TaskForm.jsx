@@ -45,7 +45,7 @@ export default function TaskForm({
         <select
           value={safeValue(taskForm.categoriaId, '')}
           onChange={(e) => setTaskForm({ ...taskForm, categoriaId: Number(e.target.value) })}
-          className="w-full px-4 py-2 rounded-xl bg-white/20 text-white"
+          className="w-full px-4 py-2 rounded-xl bg-black/20 text-white"
           required
         >
           <option value="" disabled>Seleccione una categoría</option>
@@ -60,7 +60,7 @@ export default function TaskForm({
         <select
           value={safeValue(taskForm.estadoId, '')}
           onChange={(e) => setTaskForm({ ...taskForm, estadoId: Number(e.target.value) })}
-          className="w-full px-4 py-2 rounded-xl bg-white/20 text-white"
+          className="w-full px-4 py-2 rounded-xl bg-black/20 text-white"
           required
         >
           <option value="" disabled>Seleccione un estado</option>
