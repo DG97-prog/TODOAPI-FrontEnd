@@ -1,11 +1,13 @@
 import React from 'react';
-import { CheckCircle, Check, Clock } from 'lucide-react';
+import { CheckCircle, Check, Clock, AlertCircle } from 'lucide-react';
 import '../index.css';
 
 export default function TaskStats({ tasks }) {
   const total = tasks.length;
-  const completed = tasks.filter(t => t.status === 1).length;
-  const pending = tasks.filter(t => t.status === 0).length;
+
+  const pending = tasks.filter(t => Number(t.estadoId) === 1).length;
+  const inProgress = tasks.filter(t => Number(t.estadoId) === 2).length;
+  const completed = tasks.filter(t => Number(t.estadoId) === 3).length;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -36,11 +38,23 @@ export default function TaskStats({ tasks }) {
       <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-6 border border-white/20">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-white/70 text-sm">Pendientes</p>
-            <p className="text-3xl font-bold text-white">{pending}</p>
+            <p className="text-white/70 text-sm">En progreso</p>
+            <p className="text-3xl font-bold text-white">{inProgress}</p>
           </div>
           <div className="w-12 h-12 bg-amber-500/20 rounded-2xl flex items-center justify-center">
             <Clock className="w-6 h-6 text-amber-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-6 border border-white/20">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-white/70 text-sm">Pendientes</p>
+            <p className="text-3xl font-bold text-white">{pending}</p>
+          </div>
+          <div className="w-12 h-12 bg-red-500/20 rounded-2xl flex items-center justify-center">
+            <AlertCircle className="w-6 h-6 text-red-400" />
           </div>
         </div>
       </div>
