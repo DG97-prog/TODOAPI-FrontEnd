@@ -25,19 +25,24 @@ export default function App() {
     categoriaId: '',
     estadoId: '',
     fechaVencimiento: '',
+    usuarioId: null,
   });
+
   const [isEditing, setIsEditing] = useState(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
 
   const [showUserAdmin, setShowUserAdmin] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [editingUserId, setEditingUserId] = useState(null);
+
   const [userAdminForm, setUserAdminForm] = useState({
     nombreUsuario: '',
     correo: '',
     contrasena: '',
-    rol: 'User'
+    rol: 'User',
   });
+
+  const [allUsers, setAllUsers] = useState([]);
 
   const currentService = useMockService ? mockService : apiService;
 
@@ -47,10 +52,28 @@ export default function App() {
     setLoginError('');
 
     try {
-      const result = await currentService.login(loginForm.username, loginForm.password);
+      const result = await currentService.login(
+        loginForm.username,
+        loginForm.password
+      );
+
       setUser(result.user);
       setIsLoggedIn(true);
-      loadTasks();
+      await loadTasks();
+
+      if (!useMockService && result.user.role === 'Supervisor') {
+        try {
+          const users = await apiService.getUsers();
+          setAllUsers(users || []);
+        } catch (err) {
+          console.error('Error cargando usuarios para supervisor:', err);
+        }
+
+        setTaskForm((prev) => ({
+          ...prev,
+          usuarioId: Number(result.user.id),
+        }));
+      }
     } catch (error) {
       setLoginError(error.message);
     } finally {
@@ -64,7 +87,7 @@ export default function App() {
       const taskList = await currentService.getTasks();
       setTasks(taskList || []);
     } catch (error) {
-      console.error("Error cargando tareas:", error);
+      console.error('Error cargando tareas:', error);
     } finally {
       setLoading(false);
     }
@@ -77,29 +100,44 @@ export default function App() {
     try {
       if (isEditing) {
         const updatedTask = await currentService.updateTask(isEditing, taskForm);
-        setTasks(tasks.map(t => t.id === isEditing ? (updatedTask || taskForm) : t));
+        setTasks(
+          tasks.map((t) => (t.id === isEditing ? updatedTask || taskForm : t))
+        );
         setIsEditing(null);
       } else {
+        const payload = {
+          ...taskForm,
+          categoriaId: Number(taskForm.categoriaId),
+          estadoId: Number(taskForm.estadoId),
+        };
+
+        if (user?.role === 'Supervisor' && taskForm.usuarioId) {
+          payload.usuarioId = Number(taskForm.usuarioId);
+        }
         const newTask = await currentService.createTask({
           ...taskForm,
           categoriaId: Number(taskForm.categoriaId),
           estadoId: Number(taskForm.estadoId),
         });
 
-        setTasks([...tasks, newTask]);
+        if (newTask.usuarioId === user.id) {
+          setTasks([...tasks, newTask]);
+        }
       }
 
-      setTaskForm({
+      setTaskForm((prev) => ({
+        ...prev,
         titulo: '',
         descripcion: '',
         categoriaId: '',
         estadoId: '',
         fechaVencimiento: '',
-      });
+      }));
 
       setShowTaskForm(false);
     } catch (err) {
       console.error(err);
+      alert(err.message || 'Error procesando tarea');
     } finally {
       setLoading(false);
     }
@@ -107,33 +145,33 @@ export default function App() {
 
   const handleDeleteTask = async (id) => {
     await currentService.deleteTask(id);
-    setTasks(tasks.filter(t => t.id !== id));
+    setTasks(tasks.filter((t) => t.id !== id));
   };
 
   const handleToggleStatus = async (task) => {
     const updated = await currentService.updateTask(task.id, {
       ...task,
-      estadoId: task.estadoId
+      estadoId: task.estadoId,
     });
 
-    setTasks(tasks.map(t => t.id === task.id ? (updated || task) : t));
+    setTasks(tasks.map((t) => (t.id === task.id ? updated || task : t)));
   };
 
   const handleEditTask = (task) => {
-    setTaskForm(task);
+    setTaskForm({
+      titulo: task.titulo,
+      descripcion: task.descripcion,
+      categoriaId: task.categoriaId,
+      estadoId: task.estadoId,
+      fechaVencimiento: task.fechaVencimiento,
+      usuarioId: task.usuarioId ?? taskForm.usuarioId ?? null,
+    });
     setIsEditing(task.id);
     setShowTaskForm(true);
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setUser(null);
-    setTasks([]);
-    setShowUserAdmin(false);
-  };
-
   const loadAdminUsers = async () => {
-    if (useMockService || user?.role !== "Admin") return;
+    if (useMockService || user?.role !== 'Admin') return;
     try {
       const users = await apiService.getUsers();
       setAdminUsers(users);
@@ -160,13 +198,13 @@ export default function App() {
         nombreUsuario: '',
         correo: '',
         contrasena: '',
-        rol: 'User'
+        rol: 'User',
       });
 
       setEditingUserId(null);
       loadAdminUsers();
     } catch (err) {
-      alert("Error: " + err.message);
+      alert('Error: ' + err.message);
     }
   };
 
@@ -174,17 +212,33 @@ export default function App() {
     setUserAdminForm({
       nombreUsuario: u.nombreUsuario,
       correo: u.correo,
-      contrasena: "",
-      rol: u.rol
+      contrasena: '',
+      rol: u.rol,
     });
     setEditingUserId(u.id);
   };
 
   const handleDeleteUserClick = async (id) => {
-    if (!window.confirm("¿Eliminar este usuario?")) return;
+    if (!window.confirm('¿Eliminar este usuario?')) return;
 
     await apiService.deleteUser(id);
     loadAdminUsers();
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setUser(null);
+    setTasks([]);
+    setShowUserAdmin(false);
+    setAllUsers([]);
+    setTaskForm({
+      titulo: '',
+      descripcion: '',
+      categoriaId: '',
+      estadoId: '',
+      fechaVencimiento: '',
+      usuarioId: null,
+    });
   };
 
   if (!isLoggedIn) {
@@ -205,7 +259,6 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <header className="bg-white/10 backdrop-blur-lg border-b border-white/20">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
               <CheckCircle className="w-6 h-6 text-white" />
@@ -214,12 +267,12 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
-            {!useMockService && user?.role === "Admin" && (
+            {!useMockService && user?.role === 'Admin' && (
               <button
-                onClick={() => setShowUserAdmin(prev => !prev)}
+                onClick={() => setShowUserAdmin((prev) => !prev)}
                 className="px-3 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700"
               >
-                {showUserAdmin ? "Volver a Tareas" : "Gestionar Usuarios"}
+                {showUserAdmin ? 'Volver a Tareas' : 'Gestionar Usuarios'}
               </button>
             )}
 
@@ -237,12 +290,10 @@ export default function App() {
               <LogOut className="w-5 h-5" />
             </button>
           </div>
-
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-
         {showUserAdmin ? (
           <UserAdmin
             adminUsers={adminUsers}
@@ -258,18 +309,46 @@ export default function App() {
           <>
             <TaskStats tasks={tasks} />
 
+            {user?.role === 'Supervisor' && !useMockService && (
+              <div className="mb-4">
+                <label className="block text-white text-sm mb-1">
+                  Asignar tareas a:
+                </label>
+                <select
+                  value={taskForm.usuarioId ?? user.id}
+                  onChange={(e) =>
+                    setTaskForm((prev) => ({
+                      ...prev,
+                      usuarioId: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full max-w-xs px-4 py-2 rounded-xl bg-black/30 text-white"
+                >
+                  <option value={user.id}>A mí mismo</option>
+                  {allUsers
+                    .filter((u) => u.id !== user.id)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nombreUsuario} ({u.rol})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
             <div className="mb-6">
               <button
                 onClick={() => {
                   setShowTaskForm(!showTaskForm);
                   setIsEditing(null);
-                  setTaskForm({
+                  setTaskForm((prev) => ({
+                    ...prev,
                     titulo: '',
                     descripcion: '',
                     categoriaId: '',
                     estadoId: '',
                     fechaVencimiento: '',
-                  });
+                  }));
                 }}
                 className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl"
               >
@@ -291,7 +370,7 @@ export default function App() {
             )}
 
             <div className="space-y-4">
-              {(tasks?.$values ?? tasks).map(task => (
+              {(tasks?.$values ?? tasks).map((task) => (
                 <TaskItem
                   key={task.id}
                   task={task}
@@ -303,7 +382,6 @@ export default function App() {
             </div>
           </>
         )}
-
       </main>
     </div>
   );
