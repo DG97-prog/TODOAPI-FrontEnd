@@ -79,7 +79,7 @@ export default function TaskForm({
           onChange={(e) =>
             setTaskForm({
               ...taskForm,
-              fechaVencimiento: e.target.value   // ← SIN ISOUTC
+              fechaVencimiento: e.target.value
             })
           }
           className="w-full px-4 py-2 rounded-xl bg-white/20 text-white"

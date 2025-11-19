@@ -47,7 +47,6 @@ export default function App() {
 
   const currentService = useMockService ? mockService : apiService;
 
-  // ============ LOGIN ============
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -63,7 +62,6 @@ export default function App() {
       setIsLoggedIn(true);
       await loadTasks();
 
-      // Si es Supervisor y está usando API real, cargamos lista de usuarios
       if (!useMockService && result.user.role === 'Supervisor') {
         try {
           const users = await apiService.getUsers();
@@ -72,7 +70,6 @@ export default function App() {
           console.error('Error cargando usuarios para supervisor:', err);
         }
 
-        // Por defecto, asignar a sí mismo
         setTaskForm((prev) => ({
           ...prev,
           usuarioId: Number(result.user.id),
@@ -85,7 +82,6 @@ export default function App() {
     }
   };
 
-  // ============ TAREAS ============
   const loadTasks = async () => {
     setLoading(true);
     try {
@@ -118,22 +114,15 @@ export default function App() {
           estadoId: Number(taskForm.estadoId),
         };
 
-        // Si es supervisor y seleccionó usuario destino, lo mandamos
         if (user?.role === 'Supervisor' && taskForm.usuarioId) {
           payload.usuarioId = Number(taskForm.usuarioId);
         } else {
-          // Usuario normal o sin selección explícita → backend usa usuario del token
           delete payload.usuarioId;
         }
-
-        // Crear la tarea
         await currentService.createTask(payload);
-
-        // Recargar SOLO las tareas del usuario logueado
         await loadTasks();
       }
 
-      // Limpiar campos del formulario (usuarioId se mantiene si es supervisor)
       setTaskForm((prev) => ({
         ...prev,
         titulo: '',
@@ -179,7 +168,6 @@ export default function App() {
     setShowTaskForm(true);
   };
 
-  // ============ ADMIN USUARIOS ============
   const loadAdminUsers = async () => {
     if (useMockService || user?.role !== 'Admin') return;
     try {
@@ -235,7 +223,6 @@ export default function App() {
     loadAdminUsers();
   };
 
-  // ============ REPORTE (EXCEL) SOLO SUPERVISOR ============
   const handleDownloadReport = async () => {
     try {
       await apiService.downloadTasksReportExcel();
@@ -245,7 +232,6 @@ export default function App() {
     }
   };
 
-  // ============ LOGOUT ============
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUser(null);
@@ -262,7 +248,6 @@ export default function App() {
     });
   };
 
-  // ============ RENDER ============
   if (!isLoggedIn) {
     return (
       <Login
@@ -289,7 +274,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Botón Admin: Gestión de usuarios */}
             {!useMockService && user?.role === 'Admin' && (
               <button
                 onClick={() => setShowUserAdmin((prev) => !prev)}
@@ -299,7 +283,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Botón Supervisor: Descargar Excel */}
             {!useMockService && user?.role === 'Supervisor' && (
               <button
                 onClick={handleDownloadReport}
@@ -342,7 +325,6 @@ export default function App() {
           <>
             <TaskStats tasks={tasks} />
 
-            {/* Selector de asignación SOLO para Supervisor en API real */}
             {user?.role === 'Supervisor' && !useMockService && (
               <div className="mb-4">
                 <label className="block text-white text-sm mb-1">

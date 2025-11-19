@@ -130,8 +130,6 @@ const apiService = {
     }
   },
 
-  // ====== 🔥 MÓDULO USUARIOS (Admin / Supervisor para listado) ======
-
   // Listar usuarios (Admin y Supervisor)
   getUsers: async () => {
     const response = await fetch(`${apiService.baseUrl}/account`, {
@@ -197,7 +195,7 @@ const apiService = {
     }
   },
 
-  // ====== 🔥 REPORTE DE TAREAS EN EXCEL (Solo Supervisor) ======
+  //REPORTE DE TAREAS EN EXCEL (Solo Supervisor) 
   downloadTasksReportExcel: async () => {
     const response = await fetch(`${apiService.baseUrl}/tareas/report`, {
       method: 'GET',
