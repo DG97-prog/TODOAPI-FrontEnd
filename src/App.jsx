@@ -42,11 +42,12 @@ export default function App() {
     rol: 'User',
   });
 
-  const [allUsers, setAllUsers] = useState([]); // para supervisor
+  // Lista de todos los usuarios, para que Supervisor pueda asignar tareas
+  const [allUsers, setAllUsers] = useState([]);
 
   const currentService = useMockService ? mockService : apiService;
 
-  // =================== LOGIN ===================
+  // ============ LOGIN ============
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -84,7 +85,7 @@ export default function App() {
     }
   };
 
-  // =================== TAREAS ===================
+  // ============ TAREAS ============
   const loadTasks = async () => {
     setLoading(true);
     try {
@@ -121,18 +122,18 @@ export default function App() {
         if (user?.role === 'Supervisor' && taskForm.usuarioId) {
           payload.usuarioId = Number(taskForm.usuarioId);
         } else {
-          // Usuario normal o sin selección explícita → backend usará userId del token
+          // Usuario normal o sin selección explícita → backend usa usuario del token
           delete payload.usuarioId;
         }
 
-        // 🔥 Crear la tarea (para user o supervisor)
+        // Crear la tarea
         await currentService.createTask(payload);
 
-        // 🔥 Recargamos SOLO las tareas del usuario logueado
+        // Recargar SOLO las tareas del usuario logueado
         await loadTasks();
       }
 
-      // Limpiar form (pero mantener usuarioId si es supervisor)
+      // Limpiar campos del formulario (usuarioId se mantiene si es supervisor)
       setTaskForm((prev) => ({
         ...prev,
         titulo: '',
@@ -140,7 +141,6 @@ export default function App() {
         categoriaId: '',
         estadoId: '',
         fechaVencimiento: '',
-        // usuarioId se queda igual para supervisor
       }));
 
       setShowTaskForm(false);
@@ -179,7 +179,7 @@ export default function App() {
     setShowTaskForm(true);
   };
 
-  // =================== ADMIN USUARIOS ===================
+  // ============ ADMIN USUARIOS ============
   const loadAdminUsers = async () => {
     if (useMockService || user?.role !== 'Admin') return;
     try {
@@ -235,7 +235,17 @@ export default function App() {
     loadAdminUsers();
   };
 
-  // =================== LOGOUT ===================
+  // ============ REPORTE (EXCEL) SOLO SUPERVISOR ============
+  const handleDownloadReport = async () => {
+    try {
+      await apiService.downloadTasksReportExcel();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error al descargar el reporte');
+    }
+  };
+
+  // ============ LOGOUT ============
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUser(null);
@@ -252,7 +262,7 @@ export default function App() {
     });
   };
 
-  // =================== RENDER ===================
+  // ============ RENDER ============
   if (!isLoggedIn) {
     return (
       <Login
@@ -279,12 +289,23 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
+            {/* Botón Admin: Gestión de usuarios */}
             {!useMockService && user?.role === 'Admin' && (
               <button
                 onClick={() => setShowUserAdmin((prev) => !prev)}
                 className="px-3 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700"
               >
                 {showUserAdmin ? 'Volver a Tareas' : 'Gestionar Usuarios'}
+              </button>
+            )}
+
+            {/* Botón Supervisor: Descargar Excel */}
+            {!useMockService && user?.role === 'Supervisor' && (
+              <button
+                onClick={handleDownloadReport}
+                className="px-3 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700"
+              >
+                Descargar Excel
               </button>
             )}
 
@@ -321,6 +342,7 @@ export default function App() {
           <>
             <TaskStats tasks={tasks} />
 
+            {/* Selector de asignación SOLO para Supervisor en API real */}
             {user?.role === 'Supervisor' && !useMockService && (
               <div className="mb-4">
                 <label className="block text-white text-sm mb-1">
