@@ -25,7 +25,7 @@ export default function App() {
     categoriaId: '',
     estadoId: '',
     fechaVencimiento: '',
-    usuarioId: null,
+    usuarioId: null, // para Supervisor
   });
 
   const [isEditing, setIsEditing] = useState(null);
@@ -42,10 +42,11 @@ export default function App() {
     rol: 'User',
   });
 
-  const [allUsers, setAllUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]); // para supervisor
 
   const currentService = useMockService ? mockService : apiService;
 
+  // =================== LOGIN ===================
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -61,6 +62,7 @@ export default function App() {
       setIsLoggedIn(true);
       await loadTasks();
 
+      // Si es Supervisor y está usando API real, cargamos lista de usuarios
       if (!useMockService && result.user.role === 'Supervisor') {
         try {
           const users = await apiService.getUsers();
@@ -69,6 +71,7 @@ export default function App() {
           console.error('Error cargando usuarios para supervisor:', err);
         }
 
+        // Por defecto, asignar a sí mismo
         setTaskForm((prev) => ({
           ...prev,
           usuarioId: Number(result.user.id),
@@ -81,6 +84,7 @@ export default function App() {
     }
   };
 
+  // =================== TAREAS ===================
   const loadTasks = async () => {
     setLoading(true);
     try {
@@ -99,32 +103,36 @@ export default function App() {
 
     try {
       if (isEditing) {
+        // EDITAR
         const updatedTask = await currentService.updateTask(isEditing, taskForm);
         setTasks(
           tasks.map((t) => (t.id === isEditing ? updatedTask || taskForm : t))
         );
         setIsEditing(null);
       } else {
+        // CREAR
         const payload = {
           ...taskForm,
           categoriaId: Number(taskForm.categoriaId),
           estadoId: Number(taskForm.estadoId),
         };
 
+        // Si es supervisor y seleccionó usuario destino, lo mandamos
         if (user?.role === 'Supervisor' && taskForm.usuarioId) {
           payload.usuarioId = Number(taskForm.usuarioId);
+        } else {
+          // Usuario normal o sin selección explícita → backend usará userId del token
+          delete payload.usuarioId;
         }
-        const newTask = await currentService.createTask({
-          ...taskForm,
-          categoriaId: Number(taskForm.categoriaId),
-          estadoId: Number(taskForm.estadoId),
-        });
 
-        if (newTask.usuarioId === user.id) {
-          setTasks([...tasks, newTask]);
-        }
+        // 🔥 Crear la tarea (para user o supervisor)
+        await currentService.createTask(payload);
+
+        // 🔥 Recargamos SOLO las tareas del usuario logueado
+        await loadTasks();
       }
 
+      // Limpiar form (pero mantener usuarioId si es supervisor)
       setTaskForm((prev) => ({
         ...prev,
         titulo: '',
@@ -132,6 +140,7 @@ export default function App() {
         categoriaId: '',
         estadoId: '',
         fechaVencimiento: '',
+        // usuarioId se queda igual para supervisor
       }));
 
       setShowTaskForm(false);
@@ -170,6 +179,7 @@ export default function App() {
     setShowTaskForm(true);
   };
 
+  // =================== ADMIN USUARIOS ===================
   const loadAdminUsers = async () => {
     if (useMockService || user?.role !== 'Admin') return;
     try {
@@ -225,6 +235,7 @@ export default function App() {
     loadAdminUsers();
   };
 
+  // =================== LOGOUT ===================
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUser(null);
@@ -241,6 +252,7 @@ export default function App() {
     });
   };
 
+  // =================== RENDER ===================
   if (!isLoggedIn) {
     return (
       <Login
