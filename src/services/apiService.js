@@ -1,5 +1,8 @@
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5220/api';
+
 const apiService = {
-  baseUrl: 'http://localhost:5220/api',
+  baseUrl: API_BASE_URL,
   token: null,
 
   // Helper para leer claims del JWT sin librerías
