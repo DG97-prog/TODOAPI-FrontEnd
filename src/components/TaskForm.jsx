@@ -9,8 +9,9 @@ export default function TaskForm({
   setShowTaskForm,
   setIsEditing
 }) {
-  // Función para evitar inputs no controlados
-  const safeValue = (value, fallback = '') => (value === undefined || value === null ? fallback : value);
+  // Evitar inputs no controlados
+  const safeValue = (value, fallback = '') =>
+    value === undefined || value === null ? fallback : value;
 
   return (
     <form
@@ -74,8 +75,13 @@ export default function TaskForm({
         <label className="block text-white text-sm font-medium mb-1">Fecha de Vencimiento</label>
         <input
           type="datetime-local"
-          value={safeValue(taskForm.fechaVencimiento)?.slice(0, 16) || ''}
-          onChange={(e) => setTaskForm({ ...taskForm, fechaVencimiento: new Date(e.target.value).toISOString() })}
+          value={safeValue(taskForm.fechaVencimiento)}
+          onChange={(e) =>
+            setTaskForm({
+              ...taskForm,
+              fechaVencimiento: e.target.value   // ← SIN ISOUTC
+            })
+          }
           className="w-full px-4 py-2 rounded-xl bg-white/20 text-white"
           required
         />

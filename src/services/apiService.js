@@ -51,7 +51,7 @@ const apiService = {
     return { token: data.token, user };
   },
 
-  // Obtener tareas
+  // Obtener tareas (del usuario logueado)
   getTasks: async () => {
     const response = await fetch(`${apiService.baseUrl}/tareas`, {
       headers: { Authorization: `Bearer ${apiService.token}` },
@@ -130,9 +130,9 @@ const apiService = {
     }
   },
 
-  // ====== 🔥 MÓDULO USUARIOS (solo Admin) ======
+  // ====== 🔥 MÓDULO USUARIOS (Admin / Supervisor para listado) ======
 
-  // Listar usuarios
+  // Listar usuarios (Admin y Supervisor)
   getUsers: async () => {
     const response = await fetch(`${apiService.baseUrl}/account`, {
       headers: { Authorization: `Bearer ${apiService.token}` },
@@ -146,7 +146,7 @@ const apiService = {
     return await response.json();
   },
 
-  // Registrar usuario
+  // Registrar usuario (solo Admin)
   registerUser: async (newUser) => {
     const response = await fetch(`${apiService.baseUrl}/account/register`, {
       method: 'POST',
@@ -165,7 +165,7 @@ const apiService = {
     return await response.json();
   },
 
-  // Actualizar usuario
+  // Actualizar usuario (solo Admin)
   updateUser: async (id, user) => {
     const response = await fetch(`${apiService.baseUrl}/account/${id}`, {
       method: 'PUT',
@@ -184,7 +184,7 @@ const apiService = {
     return await response.json();
   },
 
-  // Eliminar usuario
+  // Eliminar usuario (solo Admin)
   deleteUser: async (id) => {
     const response = await fetch(`${apiService.baseUrl}/account/${id}`, {
       method: 'DELETE',
@@ -195,6 +195,37 @@ const apiService = {
       const text = await response.text();
       throw new Error('Error al eliminar usuario: ' + text);
     }
+  },
+
+  // ====== 🔥 REPORTE DE TAREAS EN EXCEL (Solo Supervisor) ======
+  downloadTasksReportExcel: async () => {
+    const response = await fetch(`${apiService.baseUrl}/tareas/report`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiService.token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error('Error al descargar reporte: ' + text);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    const fileName = `reporte_tareas_${new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, '-')}.xlsx`;
+
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   },
 };
 
