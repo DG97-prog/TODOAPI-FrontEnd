@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
 import TaskForm from './components/TaskForm';
 import TaskItem from './components/TaskItem';
 import TaskStats from './components/TaskStats';
+import UserAdmin from './components/UserAdmin';
 import mockService from './services/mockService';
 import apiService from './services/apiService';
 import './App.css';
@@ -24,9 +25,25 @@ export default function App() {
     categoriaId: '',
     estadoId: '',
     fechaVencimiento: '',
+    usuarioId: null, // para Supervisor
   });
+
   const [isEditing, setIsEditing] = useState(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
+
+  const [showUserAdmin, setShowUserAdmin] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [editingUserId, setEditingUserId] = useState(null);
+
+  const [userAdminForm, setUserAdminForm] = useState({
+    nombreUsuario: '',
+    correo: '',
+    contrasena: '',
+    rol: 'User',
+  });
+
+  // Lista de todos los usuarios, para que Supervisor pueda asignar tareas
+  const [allUsers, setAllUsers] = useState([]);
 
   const currentService = useMockService ? mockService : apiService;
 
@@ -34,11 +51,30 @@ export default function App() {
     e.preventDefault();
     setLoading(true);
     setLoginError('');
+
     try {
-      const result = await currentService.login(loginForm.username, loginForm.password);
+      const result = await currentService.login(
+        loginForm.username,
+        loginForm.password
+      );
+
       setUser(result.user);
       setIsLoggedIn(true);
-      loadTasks();
+      await loadTasks();
+
+      if (!useMockService && result.user.role === 'Supervisor') {
+        try {
+          const users = await apiService.getUsers();
+          setAllUsers(users || []);
+        } catch (err) {
+          console.error('Error cargando usuarios para supervisor:', err);
+        }
+
+        setTaskForm((prev) => ({
+          ...prev,
+          usuarioId: Number(result.user.id),
+        }));
+      }
     } catch (error) {
       setLoginError(error.message);
     } finally {
@@ -61,87 +97,62 @@ export default function App() {
   const handleTaskSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     try {
       if (isEditing) {
-        const taskToUpdate = tasks.find(t => t.id === isEditing);
-        if (!taskToUpdate) throw new Error("Tarea no encontrada para editar");
-
-        const updatedTaskData = {
-          ...taskToUpdate,
-          ...taskForm,
-        };
-
-        const updatedTask = await currentService.updateTask(isEditing, updatedTaskData);
-
-        setTasks(prev =>
-          prev.map(t => t.id === isEditing ? (updatedTask || updatedTaskData) : t)
+        // EDITAR
+        const updatedTask = await currentService.updateTask(isEditing, taskForm);
+        setTasks(
+          tasks.map((t) => (t.id === isEditing ? updatedTask || taskForm : t))
         );
         setIsEditing(null);
       } else {
-        const newTaskData = {
+        // CREAR
+        const payload = {
           ...taskForm,
-          categoriaId: parseInt(taskForm.categoriaId, 10),
-          estadoId: parseInt(taskForm.estadoId, 10),
-          fechaVencimiento: taskForm.fechaVencimiento || new Date().toISOString(),
+          categoriaId: Number(taskForm.categoriaId),
+          estadoId: Number(taskForm.estadoId),
         };
 
-        const newTask = await currentService.createTask(newTaskData);
-        setTasks(prev => [...prev, newTask]);
+        if (user?.role === 'Supervisor' && taskForm.usuarioId) {
+          payload.usuarioId = Number(taskForm.usuarioId);
+        } else {
+          delete payload.usuarioId;
+        }
+        await currentService.createTask(payload);
+        await loadTasks();
       }
-      setTaskForm({
+
+      setTaskForm((prev) => ({
+        ...prev,
         titulo: '',
         descripcion: '',
         categoriaId: '',
         estadoId: '',
         fechaVencimiento: '',
-      });
+      }));
+
       setShowTaskForm(false);
-    } catch (error) {
-      console.error('Error con la tarea:', error);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error procesando tarea');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteTask = async (id) => {
-    setLoading(true);
-    try {
-      await currentService.deleteTask(id);
-      setTasks(prev => prev.filter(t => t.id !== id));
-    } catch (error) {
-      console.error('Error eliminando tarea:', error);
-    } finally {
-      setLoading(false);
-    }
+    await currentService.deleteTask(id);
+    setTasks(tasks.filter((t) => t.id !== id));
   };
 
-  // 🔥 Importante: usar el objeto actualizado que viene desde TaskItem
-  const handleToggleStatus = async (taskWithNewStatus) => {
-    setLoading(true);
-    try {
-      const updatedTask = await currentService.updateTask(taskWithNewStatus.id, taskWithNewStatus);
+  const handleToggleStatus = async (task) => {
+    const updated = await currentService.updateTask(task.id, {
+      ...task,
+      estadoId: task.estadoId,
+    });
 
-      const taskToUse = (updatedTask && Object.keys(updatedTask).length > 0)
-        ? updatedTask
-        : taskWithNewStatus;
-
-      setTasks(prev =>
-        prev.map(t =>
-          t.id === taskWithNewStatus.id ? taskToUse : t
-        )
-      );
-    } catch (error) {
-      console.error('Error actualizando estado:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setUser(null);
-    setTasks([]);
-    setLoginForm({ username: '', password: '' });
+    setTasks(tasks.map((t) => (t.id === task.id ? updated || task : t)));
   };
 
   const handleEditTask = (task) => {
@@ -151,130 +162,242 @@ export default function App() {
       categoriaId: task.categoriaId,
       estadoId: task.estadoId,
       fechaVencimiento: task.fechaVencimiento,
+      usuarioId: task.usuarioId ?? taskForm.usuarioId ?? null,
     });
     setIsEditing(task.id);
     setShowTaskForm(true);
   };
 
-  return !isLoggedIn ? (
-    <Login
-      useMockService={useMockService}
-      setUseMockService={setUseMockService}
-      loginForm={loginForm}
-      setLoginForm={setLoginForm}
-      handleLogin={handleLogin}
-      loading={loading}
-      loginError={loginError}
-    />
-  ) : (
+  const loadAdminUsers = async () => {
+    if (useMockService || user?.role !== 'Admin') return;
+    try {
+      const users = await apiService.getUsers();
+      setAdminUsers(users);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (showUserAdmin) loadAdminUsers();
+  }, [showUserAdmin]);
+
+  const handleUserFormSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      if (editingUserId) {
+        await apiService.updateUser(editingUserId, userAdminForm);
+      } else {
+        await apiService.registerUser(userAdminForm);
+      }
+
+      setUserAdminForm({
+        nombreUsuario: '',
+        correo: '',
+        contrasena: '',
+        rol: 'User',
+      });
+
+      setEditingUserId(null);
+      loadAdminUsers();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  };
+
+  const handleEditUserClick = (u) => {
+    setUserAdminForm({
+      nombreUsuario: u.nombreUsuario,
+      correo: u.correo,
+      contrasena: '',
+      rol: u.rol,
+    });
+    setEditingUserId(u.id);
+  };
+
+  const handleDeleteUserClick = async (id) => {
+    if (!window.confirm('¿Eliminar este usuario?')) return;
+
+    await apiService.deleteUser(id);
+    loadAdminUsers();
+  };
+
+  const handleDownloadReport = async () => {
+    try {
+      await apiService.downloadTasksReportExcel();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error al descargar el reporte');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setUser(null);
+    setTasks([]);
+    setShowUserAdmin(false);
+    setAllUsers([]);
+    setTaskForm({
+      titulo: '',
+      descripcion: '',
+      categoriaId: '',
+      estadoId: '',
+      fechaVencimiento: '',
+      usuarioId: null,
+    });
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <Login
+        useMockService={useMockService}
+        setUseMockService={setUseMockService}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        handleLogin={handleLogin}
+        loading={loading}
+        loginError={loginError}
+      />
+    );
+  }
+
+  return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <header className="bg-white/10 backdrop-blur-lg border-b border-white/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Todo App</h1>
-                <p className="text-white/70 text-sm">Gestiona tus tareas de forma inteligente</p>
-              </div>
+        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
+              <CheckCircle className="w-6 h-6 text-white" />
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="hidden sm:flex items-center space-x-2 px-3 py-2 bg-white/10 rounded-xl">
-                <span className="text-white/70 text-sm">
-                  {useMockService ? '🔄 Mock' : '🌐 API'}
-                </span>
-                <button
-                  onClick={() => setUseMockService(!useMockService)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    useMockService ? 'bg-blue-500' : 'bg-gray-600'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                      useMockService ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-              <div className="flex items-center space-x-3 px-4 py-2 bg-white/10 rounded-2xl">
-                <User className="w-5 h-5 text-white" />
-                <span className="text-white font-medium">{user?.username}</span>
-                <span className="px-2 py-1 bg-blue-500/30 text-blue-200 text-xs rounded-lg">
-                  {user?.role}
-                </span>
-              </div>
+            <h1 className="text-2xl font-bold text-white">Todo App</h1>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            {!useMockService && user?.role === 'Admin' && (
               <button
-                onClick={handleLogout}
-                className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200"
+                onClick={() => setShowUserAdmin((prev) => !prev)}
+                className="px-3 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700"
               >
-                <LogOut className="w-5 h-5" />
+                {showUserAdmin ? 'Volver a Tareas' : 'Gestionar Usuarios'}
               </button>
-            </div>
+            )}
+
+            {!useMockService && user?.role === 'Supervisor' && (
+              <button
+                onClick={handleDownloadReport}
+                className="px-3 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700"
+              >
+                Descargar Excel
+              </button>
+            )}
+
+            <User className="w-5 h-5 text-white" />
+            <span className="text-white font-medium">{user?.username}</span>
+
+            <span className="px-2 py-1 bg-blue-500/30 text-blue-200 text-xs rounded-lg">
+              {user?.role}
+            </span>
+
+            <button
+              onClick={handleLogout}
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <TaskStats tasks={tasks} />
-
-        <div className="mb-6">
-          <button
-            onClick={() => {
-              setShowTaskForm(!showTaskForm);
-              setTaskForm({
-                titulo: '',
-                descripcion: '',
-                categoriaId: '',
-                estadoId: '',
-                fechaVencimiento: '',
-              });
-              setIsEditing(null);
-            }}
-            className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-2xl hover:from-blue-700 hover:to-purple-700 transition-all duration-300 transform hover:scale-105"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Nueva Tarea</span>
-          </button>
-        </div>
-
-        {showTaskForm && (
-          <TaskForm
-            isEditing={isEditing}
-            taskForm={taskForm}
-            setTaskForm={setTaskForm}
-            handleTaskSubmit={handleTaskSubmit}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {showUserAdmin ? (
+          <UserAdmin
+            adminUsers={adminUsers}
+            userAdminForm={userAdminForm}
+            editingUserId={editingUserId}
+            setUserAdminForm={setUserAdminForm}
+            handleUserFormSubmit={handleUserFormSubmit}
+            handleEditUserClick={handleEditUserClick}
+            handleDeleteUserClick={handleDeleteUserClick}
             loading={loading}
-            setShowTaskForm={setShowTaskForm}
-            setIsEditing={setIsEditing}
           />
-        )}
+        ) : (
+          <>
+            <TaskStats tasks={tasks} />
 
-        <div className="space-y-4">
-          {loading && tasks.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-              <p className="text-white/70 mt-4">Cargando tareas...</p>
+            {user?.role === 'Supervisor' && !useMockService && (
+              <div className="mb-4">
+                <label className="block text-white text-sm mb-1">
+                  Asignar tareas a:
+                </label>
+                <select
+                  value={taskForm.usuarioId ?? user.id}
+                  onChange={(e) =>
+                    setTaskForm((prev) => ({
+                      ...prev,
+                      usuarioId: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full max-w-xs px-4 py-2 rounded-xl bg-black/30 text-white"
+                >
+                  <option value={user.id}>A mí mismo</option>
+                  {allUsers
+                    .filter((u) => u.id !== user.id)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nombreUsuario} ({u.rol})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <button
+                onClick={() => {
+                  setShowTaskForm(!showTaskForm);
+                  setIsEditing(null);
+                  setTaskForm((prev) => ({
+                    ...prev,
+                    titulo: '',
+                    descripcion: '',
+                    categoriaId: '',
+                    estadoId: '',
+                    fechaVencimiento: '',
+                  }));
+                }}
+                className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Nueva Tarea</span>
+              </button>
             </div>
-          ) : tasks.length === 0 ? (
-            <div className="text-center py-12 bg-white/5 rounded-3xl border border-white/10">
-              <CheckCircle className="w-16 h-16 text-white/30 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-white mb-2">¡No hay tareas!</h3>
-              <p className="text-white/70">Crea tu primera tarea para comenzar</p>
-            </div>
-          ) : (
-            tasks.map(task => (
-              <TaskItem
-                key={task.id}
-                task={task}
-                onDelete={() => handleDeleteTask(task.id)}
-                onToggleStatus={handleToggleStatus}
-                onEdit={handleEditTask}
+
+            {showTaskForm && (
+              <TaskForm
+                isEditing={isEditing}
+                taskForm={taskForm}
+                setTaskForm={setTaskForm}
+                handleTaskSubmit={handleTaskSubmit}
+                setShowTaskForm={setShowTaskForm}
+                setIsEditing={setIsEditing}
+                loading={loading}
               />
-            ))
-          )}
-        </div>
+            )}
+
+            <div className="space-y-4">
+              {(tasks?.$values ?? tasks).map((task) => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  onDelete={() => handleDeleteTask(task.id)}
+                  onToggleStatus={handleToggleStatus}
+                  onEdit={handleEditTask}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

@@ -2,7 +2,21 @@ const apiService = {
   baseUrl: 'http://localhost:5220/api',
   token: null,
 
-  // Login para obtener token
+  // Helper para leer claims del JWT sin librerías
+  parseJwt(token) {
+    if (!token) return {};
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  },
+
+  // Login para obtener token y usuario (id, username, role)
   login: async (nombreUsuario, contrasena) => {
     const response = await fetch(`${apiService.baseUrl}/account/login`, {
       method: 'POST',
@@ -17,35 +31,45 @@ const apiService = {
 
     const data = await response.json();
     apiService.token = data.token;
-    return data;
+
+    const claims = apiService.parseJwt(data.token);
+
+    const user = {
+      id:
+        claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ||
+        claims['nameid'] ||
+        claims['sub'],
+      username:
+        claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ||
+        claims['unique_name'] ||
+        claims['name'],
+      role:
+        claims['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+        claims['role'],
+    };
+
+    return { token: data.token, user };
   },
 
-  // Obtener tareas
-getTasks: async () => {
-  const response = await fetch(`${apiService.baseUrl}/tareas`, {
-    headers: { Authorization: `Bearer ${apiService.token}` },
-  });
+  // Obtener tareas (del usuario logueado)
+  getTasks: async () => {
+    const response = await fetch(`${apiService.baseUrl}/tareas`, {
+      headers: { Authorization: `Bearer ${apiService.token}` },
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error('Error al obtener las tareas: ' + errorText);
-  }
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error('Error al obtener las tareas: ' + errorText);
+    }
 
-  const data = await response.json();
+    const data = await response.json();
 
-  // 🔥 Normalización robusta (SOLO aquí)
-  if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object' && '$values' in data && Array.isArray(data.$values)) {
+      return data.$values;
+    }
 
-  if (data?.$values) return data.$values;
-
-  if (data?.items) return data.items;
-
-  if (data?.tareas) return data.tareas;
-
-  // Si llega un objeto extraño, lo convertimos a array vacío
-  console.warn("Formato inesperado en GET /tareas:", data);
-  return [];
-},
+    return data;
+  },
 
   // Crear tarea
   createTask: async (task) => {
@@ -89,19 +113,8 @@ getTasks: async () => {
       throw new Error('Error al actualizar la tarea: ' + errorText);
     }
 
-    // El back ahora devuelve la tarea actualizada en JSON
     const text = await response.text();
-
-    if (!text) {
-      // Si por alguna razón no hay body, devolvemos la misma task que enviamos
-      return task;
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch {
-      return task;
-    }
+    return text ? JSON.parse(text) : task;
   },
 
   // Eliminar tarea
@@ -115,6 +128,102 @@ getTasks: async () => {
       const errorText = await response.text();
       throw new Error('Error al eliminar la tarea: ' + errorText);
     }
+  },
+
+  // Listar usuarios (Admin y Supervisor)
+  getUsers: async () => {
+    const response = await fetch(`${apiService.baseUrl}/account`, {
+      headers: { Authorization: `Bearer ${apiService.token}` },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error('Error al obtener usuarios: ' + errorText);
+    }
+
+    return await response.json();
+  },
+
+  // Registrar usuario (solo Admin)
+  registerUser: async (newUser) => {
+    const response = await fetch(`${apiService.baseUrl}/account/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiService.token}`,
+      },
+      body: JSON.stringify(newUser),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error('Error al registrar usuario: ' + text);
+    }
+
+    return await response.json();
+  },
+
+  // Actualizar usuario (solo Admin)
+  updateUser: async (id, user) => {
+    const response = await fetch(`${apiService.baseUrl}/account/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiService.token}`,
+      },
+      body: JSON.stringify(user),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error('Error al actualizar usuario: ' + text);
+    }
+
+    return await response.json();
+  },
+
+  // Eliminar usuario (solo Admin)
+  deleteUser: async (id) => {
+    const response = await fetch(`${apiService.baseUrl}/account/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${apiService.token}` },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error('Error al eliminar usuario: ' + text);
+    }
+  },
+
+  //REPORTE DE TAREAS EN EXCEL (Solo Supervisor) 
+  downloadTasksReportExcel: async () => {
+    const response = await fetch(`${apiService.baseUrl}/tareas/report`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiService.token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error('Error al descargar reporte: ' + text);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    const fileName = `reporte_tareas_${new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, '-')}.xlsx`;
+
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   },
 };
 
